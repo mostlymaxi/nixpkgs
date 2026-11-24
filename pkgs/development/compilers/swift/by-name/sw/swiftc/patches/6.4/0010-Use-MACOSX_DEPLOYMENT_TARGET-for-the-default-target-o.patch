@@ -1,0 +1,94 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Maxi Saparov <max.saparov@gmail.com>
+Date: Sun, 22 Nov 2026 21:59:48 -0500
+Subject: [PATCH] Use MACOSX_DEPLOYMENT_TARGET for the default target on macOS
+---
+ include/swift/Basic/Platform.h      |  3 +++
+ lib/Basic/Platform.cpp              | 19 +++++++++++++++++++
+ lib/Driver/Driver.cpp               |  2 +-
+ lib/Frontend/CompilerInvocation.cpp |  2 +-
+ 4 files changed, 24 insertions(+), 2 deletions(-)
+
+diff --git a/include/swift/Basic/Platform.h b/include/swift/Basic/Platform.h
+index 6da9ed5..e432ee8 100644
+--- a/include/swift/Basic/Platform.h
++++ b/include/swift/Basic/Platform.h
+@@ -86,6 +86,9 @@ namespace swift {
+   /// returned.
+   StringRef getPlatformNameForTriple(const llvm::Triple &triple);
+ 
++  /// Returns the target triple to use when no `-target` is specified.
++  std::string getDefaultTargetTripleForNixpkgs();
++
+   /// Returns the version tuple for a given target triple
+   llvm::VersionTuple getVersionForTriple(const llvm::Triple &triple);
+ 
+diff --git a/lib/Basic/Platform.cpp b/lib/Basic/Platform.cpp
+index 6c7ace6..74f8dec 100644
+--- a/lib/Basic/Platform.cpp
++++ b/lib/Basic/Platform.cpp
+@@ -15,9 +15,12 @@
+ #include "swift/Basic/Platform.h"
+ #include "llvm/ADT/StringExtras.h"
+ #include "llvm/ADT/StringSwitch.h"
++#include "llvm/TargetParser/Host.h"
+ #include "llvm/TargetParser/Triple.h"
+ #include "llvm/Support/VersionTuple.h"
+ 
++#include <cstdlib>
++
+ using namespace swift;
+ 
+ bool swift::tripleIsiOSSimulator(const llvm::Triple &triple) {
+@@ -216,6 +219,22 @@ static StringRef getPlatformNameForDarwin(const DarwinPlatformKind platform) {
+   llvm_unreachable("Unsupported Darwin platform");
+ }
+ 
++std::string swift::getDefaultTargetTripleForNixpkgs() {
++  llvm::Triple triple(llvm::sys::getDefaultTargetTriple());
++  if (!triple.isMacOSX())
++    return triple.str();
++
++  llvm::VersionTuple version;
++  const char *deploymentTarget = ::getenv("MACOSX_DEPLOYMENT_TARGET");
++  if (deploymentTarget == nullptr || version.tryParse(deploymentTarget)) {
++    version = llvm::VersionTuple();
++    version.tryParse("@darwinMinVersion@");
++  }
++
++  triple.setOSName("macosx" + version.getAsString());
++  return triple.str();
++}
++
+ StringRef swift::getPlatformNameForTriple(const llvm::Triple &triple) {
+   switch (triple.getOS()) {
+   case llvm::Triple::AIX:
+diff --git a/lib/Driver/Driver.cpp b/lib/Driver/Driver.cpp
+index 332f789..bb40f73 100644
+--- a/lib/Driver/Driver.cpp
++++ b/lib/Driver/Driver.cpp
+@@ -70,7 +70,7 @@ Driver::Driver(StringRef DriverExecutable,
+                DiagnosticEngine &Diags)
+   : Opts(createSwiftOptTable()), Diags(Diags),
+     Name(Name), DriverExecutable(DriverExecutable),
+-    DefaultTargetTriple(llvm::sys::getDefaultTargetTriple()) {
++    DefaultTargetTriple(getDefaultTargetTripleForNixpkgs()) {
+       
+   // The driver kind must be parsed prior to parsing arguments, since that
+   // affects how arguments are parsed.
+diff --git a/lib/Frontend/CompilerInvocation.cpp b/lib/Frontend/CompilerInvocation.cpp
+index 933165c..131b2df 100644
+--- a/lib/Frontend/CompilerInvocation.cpp
++++ b/lib/Frontend/CompilerInvocation.cpp
+@@ -54,7 +54,7 @@ static constexpr const char *const localeCodes[] = {
+ };
+ 
+ swift::CompilerInvocation::CompilerInvocation() {
+-  setTargetTriple(llvm::sys::getDefaultTargetTriple());
++  setTargetTriple(getDefaultTargetTripleForNixpkgs());
+ }
+ 
+ void CompilerInvocation::computeRuntimeResourcePathFromExecutablePath(
+-- 
+2.56.0
+

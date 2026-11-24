@@ -35,4 +35,8 @@
   ./0008-Disable-availability-checking-when-building-the-Runt.patch
   # Building the _Differentiation module needs _Builtin_float on Darwin.
   ./0009-Fix-_Differentiation-module-build-on-Darwin.patch
+  # Target `MACOSX_DEPLOYMENT_TARGET` by default instead of the macOS version of the build machine.
+  (replaceVars ./0010-Use-MACOSX_DEPLOYMENT_TARGET-for-the-default-target-o.patch {
+    inherit (stdenv.targetPlatform) darwinMinVersion;
+  })
 ]
